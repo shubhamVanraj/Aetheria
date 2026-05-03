@@ -10,96 +10,133 @@ import { Switch } from '@/components/ui/switch';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { PieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend } from 'recharts';
 import { MARKET_MODELS, BUILD_PARAMETERS, GPU_OPTIONS } from '@/src/constants';
-import { Info, CheckCircle2, TrendingUp, Zap, Cpu, HardDrive, Gauge } from 'lucide-react';
+import { Info, CheckCircle2, TrendingUp, Zap, Cpu, HardDrive, Gauge, Settings, Plus, Trash2, ArrowDown } from 'lucide-react';
+
+interface PipelineStage {
+  id: string;
+  name: string;
+  modelId: string;
+  inputTokens: number;
+  outputTokens: number;
+}
 
 export function BuildVsBuyCalculator() {
-  const [targetModel, setTargetModel] = useState(MARKET_MODELS[0]);
+  const [stages, setStages] = useState<PipelineStage[]>([
+    { id: '1', name: 'Primary Model', modelId: MARKET_MODELS[0].id, inputTokens: 500, outputTokens: 1000 }
+  ]);
   const [monthlyRequests, setMonthlyRequests] = useState(100000);
-  const [inputTokens, setInputTokens] = useState(500);
-  const [outputTokens, setOutputTokens] = useState(1000);
   const [selectedGpu, setSelectedGpu] = useState(GPU_OPTIONS[0]);
   const [useSpot, setUseSpot] = useState(false);
+  const [engineerCost, setEngineerCost] = useState(BUILD_PARAMETERS.ENGINEER_MONTHLY_COST);
+  const [opsOverheadPercent, setOpsOverheadPercent] = useState(BUILD_PARAMETERS.OPS_OVERHEAD_PERCENT * 100);
 
   const stats = useMemo(() => {
-    const totalInputTokensM = (monthlyRequests * inputTokens) / 1000000;
-    const totalOutputTokensM = (monthlyRequests * outputTokens) / 1000000;
+    let totalApiCost = 0;
+    let totalTokens = 0;
     
-    // API Costs (BUY)
-    const apiCost = (totalInputTokensM * targetModel.inputCostPer1M) + 
-                    (totalOutputTokensM * targetModel.outputCostPer1M);
+    stages.forEach(stage => {
+      const model = MARKET_MODELS.find(m => m.id === stage.modelId) || MARKET_MODELS[0];
+      const monthlyInputM = (monthlyRequests * stage.inputTokens) / 1000000;
+      const monthlyOutputM = (monthlyRequests * stage.outputTokens) / 1000000;
+      
+      totalApiCost += (monthlyInputM * model.inputCostPer1M) + (monthlyOutputM * model.outputCostPer1M);
+      totalTokens += monthlyRequests * (stage.inputTokens + stage.outputTokens);
+    });
+
+    // Data Transfer (Simulated egress/internal move cost for Buy)
+    const dataTransferBuy = stages.length > 1 ? (monthlyRequests * (stages.length - 1) * 0.00001) : 0;
+    const finalApiCost = totalApiCost + dataTransferBuy;
 
     // Self-Hosted Costs (BUILD)
     const BASE_TOKEN_CAPACITY_MONTHLY = 12000000000;
-    const tokensPerRequest = inputTokens + outputTokens;
-    const totalMonthlyTokens = monthlyRequests * tokensPerRequest;
     const capacityPerNodeTokens = BASE_TOKEN_CAPACITY_MONTHLY * selectedGpu.throughputFactor;
-    const nodesRequired = Math.max(1, Math.ceil(totalMonthlyTokens / capacityPerNodeTokens)); 
+    const nodesRequired = Math.max(1, Math.ceil(totalTokens / capacityPerNodeTokens)); 
     
     const gpuMonthlyUnit = useSpot ? selectedGpu.spotMonthly : selectedGpu.reservedMonthly;
     const computeCost = nodesRequired * gpuMonthlyUnit;
-    const talentCost = BUILD_PARAMETERS.ENGINEER_MONTHLY_COST;
-    const opsOverhead = (computeCost + talentCost) * BUILD_PARAMETERS.OPS_OVERHEAD_PERCENT;
-    const selfHostedTotal = computeCost + talentCost + opsOverhead;
+    const talentCost = engineerCost;
+    
+    // Extra complexity for pipeline management (Build side)
+    const complexityMultiplier = 1 + ((stages.length - 1) * 0.05); 
+    const opsOverhead = (computeCost + talentCost) * (opsOverheadPercent / 100) * complexityMultiplier;
+    
+    // Data transfer (Build side - networking between pods/nodes)
+    const dataTransferBuild = stages.length > 1 ? (monthlyRequests * (stages.length - 1) * 0.000005) : 0;
+    
+    const selfHostedTotal = computeCost + talentCost + opsOverhead + dataTransferBuild;
 
-    const savings = apiCost - selfHostedTotal;
+    const savings = finalApiCost - selfHostedTotal;
     const isBuildBetter = savings > 0;
 
     const breakdownData = [
-      { name: 'GPU Compute', value: computeCost, color: '#3b82f6' },
+      { name: 'GPU Infrastructure', value: computeCost, color: '#3b82f6' },
       { name: 'ML Talent', value: talentCost, color: '#10b981' },
-      { name: 'Ops Overhead', value: opsOverhead, color: '#6366f1' },
+      { name: 'Ops Overhead', value: opsOverhead + dataTransferBuild, color: '#6366f1' },
     ];
 
     const comparisonBarData = [
-      { name: 'Managed API', cost: apiCost, fill: '#3b82f6' },
+      { name: 'Managed API', cost: finalApiCost, fill: '#3b82f6' },
       { name: 'Private Cluster', cost: selfHostedTotal, fill: '#10b981' },
     ];
 
     return { 
-      apiCost, 
+      apiCost: finalApiCost,
       selfHostedTotal, 
       savings, 
       isBuildBetter, 
       nodesRequired,
       gpuMonthlyUnit,
       infrastructureCost: computeCost,
+      talentCost,
+      opsOverhead: opsOverhead + dataTransferBuild,
       capacityPerNodeTokens,
-      totalMonthlyTokens,
+      totalMonthlyTokens: totalTokens,
       breakdownData,
       comparisonBarData
     };
-  }, [targetModel, monthlyRequests, inputTokens, outputTokens, selectedGpu, useSpot]);
+  }, [stages, monthlyRequests, selectedGpu, useSpot, engineerCost, opsOverheadPercent]);
+
+  const addStage = () => {
+    const newId = (stages.length + 1).toString();
+    setStages([...stages, { 
+      id: newId, 
+      name: `Stage ${newId}`, 
+      modelId: MARKET_MODELS[0].id, 
+      inputTokens: 500, 
+      outputTokens: 500 
+    }]);
+  };
+
+  const removeStage = (id: string) => {
+    if (stages.length === 1) return;
+    setStages(stages.filter(s => s.id !== id));
+  };
+
+  const updateStage = (id: string, updates: Partial<PipelineStage>) => {
+    setStages(stages.map(s => s.id === id ? { ...s, ...updates } : s));
+  };
 
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Input Controls */}
         <Card className="lg:col-span-1 bg-slate-900/50 border-slate-800 shadow-xl rounded-2xl">
-          <CardHeader>
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-semibold uppercase tracking-widest text-slate-500 flex items-center gap-2">
               <Settings className="w-4 h-4" /> Parameters
             </CardTitle>
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={addStage}
+              className="border-slate-800 text-[10px] font-bold uppercase transition-all hover:bg-blue-600 hover:text-white"
+            >
+              <Plus className="w-3 h-3 mr-1" /> Add Stage
+            </Button>
           </CardHeader>
           <CardContent className="space-y-6">
             <div className="space-y-2">
-              <Label className="text-[10px] font-mono uppercase text-slate-500 tracking-[0.2em]">Target Model (Buy Reference)</Label>
-              <Select 
-                onValueChange={(val) => setTargetModel(MARKET_MODELS.find(m => m.id === val) || MARKET_MODELS[0])}
-                defaultValue={targetModel.id}
-              >
-                <SelectTrigger className="bg-slate-950 border-slate-800 text-slate-200 focus:ring-blue-500 shadow-inner">
-                  <SelectValue placeholder="Select model" />
-                </SelectTrigger>
-                <SelectContent className="bg-slate-900 border-slate-700 text-slate-200">
-                  {MARKET_MODELS.filter(m => m.type === 'api').map(m => (
-                    <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2">
-              <Label className="text-[10px] font-mono uppercase text-slate-500 tracking-[0.2em]">Monthly Requests ({monthlyRequests.toLocaleString()})</Label>
+              <Label className="text-[10px] font-mono uppercase text-slate-500 tracking-[0.2em]">Monthly Pipelines Runs ({monthlyRequests.toLocaleString()})</Label>
               <Input 
                 type="number" 
                 value={monthlyRequests} 
@@ -108,24 +145,75 @@ export function BuildVsBuyCalculator() {
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label className="text-[10px] font-mono uppercase text-slate-500 tracking-[0.2em]">Input Tokens</Label>
-                <Input 
-                  type="number" 
-                  value={inputTokens} 
-                  onChange={(e) => setInputTokens(Number(e.target.value))} 
-                  className="bg-slate-950 border-slate-800 text-slate-200 font-mono text-xs"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label className="text-[10px] font-mono uppercase text-slate-500 tracking-[0.2em]">Output Tokens</Label>
-                <Input 
-                  type="number" 
-                  value={outputTokens} 
-                  onChange={(e) => setOutputTokens(Number(e.target.value))} 
-                  className="bg-slate-950 border-slate-800 text-slate-200 font-mono text-xs"
-                />
+            <div className="space-y-6 pt-2">
+              <Label className="text-[10px] font-mono uppercase text-slate-500 tracking-[0.2em]">Pipeline Stages</Label>
+              <div className="space-y-4">
+                {stages.map((stage, index) => (
+                  <div key={stage.id} className="relative p-4 bg-slate-950/80 border border-slate-800 rounded-xl space-y-4 animate-in slide-in-from-right-2">
+                    <div className="flex justify-between items-center group">
+                      <div className="flex items-center gap-2">
+                        <Badge variant="outline" className="h-5 w-5 rounded-full p-0 flex items-center justify-center border-slate-700 text-[10px] font-bold">
+                          {index + 1}
+                        </Badge>
+                        <Input 
+                          value={stage.name} 
+                          onChange={(e) => updateStage(stage.id, { name: e.target.value })}
+                          className="bg-transparent border-none text-slate-200 font-bold p-0 h-auto focus-visible:ring-0 w-24"
+                        />
+                      </div>
+                      <button 
+                        onClick={() => removeStage(stage.id)}
+                        className="opacity-0 group-hover:opacity-100 p-1 text-slate-600 hover:text-rose-500 transition-all"
+                        disabled={stages.length === 1}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+
+                    <div className="space-y-3">
+                      <Select 
+                        onValueChange={(val) => updateStage(stage.id, { modelId: val })}
+                        defaultValue={stage.modelId}
+                      >
+                        <SelectTrigger className="bg-slate-900 border-slate-800 text-[11px] h-8 text-slate-300">
+                          <SelectValue placeholder="Select model" />
+                        </SelectTrigger>
+                        <SelectContent className="bg-slate-900 border-slate-800 text-slate-200">
+                          {MARKET_MODELS.filter(m => m.type === 'api').map(m => (
+                            <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="space-y-1">
+                          <Label className="text-[8px] font-mono uppercase text-slate-600">Input</Label>
+                          <Input 
+                            type="number" 
+                            value={stage.inputTokens} 
+                            onChange={(e) => updateStage(stage.id, { inputTokens: Number(e.target.value) })} 
+                            className="bg-slate-900 border-slate-800 text-slate-300 font-mono text-[10px] h-7 px-2"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-[8px] font-mono uppercase text-slate-600">Output</Label>
+                          <Input 
+                            type="number" 
+                            value={stage.outputTokens} 
+                            onChange={(e) => updateStage(stage.id, { outputTokens: Number(e.target.value) })} 
+                            className="bg-slate-900 border-slate-800 text-slate-300 font-mono text-[10px] h-7 px-2"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                    
+                    {index < stages.length - 1 && (
+                      <div className="absolute -bottom-4 left-1/2 -translate-x-1/2 z-10 bg-slate-900 p-1 rounded-full border border-slate-800">
+                        <ArrowDown className="w-3 h-3 text-blue-500" />
+                      </div>
+                    )}
+                  </div>
+                ))}
               </div>
             </div>
 
@@ -134,11 +222,13 @@ export function BuildVsBuyCalculator() {
                 <div className="flex justify-between items-center">
                   <Label className="text-[10px] font-mono uppercase text-slate-500 tracking-[0.2em]">Build GPU Cluster</Label>
                   <Dialog>
-                    <DialogTrigger asChild>
-                      <button className="text-[10px] text-blue-400 hover:text-blue-300 font-bold uppercase tracking-widest flex items-center gap-1 transition-colors">
-                        <Info className="w-3 h-3" /> Specs
-                      </button>
-                    </DialogTrigger>
+                    <DialogTrigger
+                      render={
+                        <button className="text-[10px] text-blue-400 hover:text-blue-300 font-bold uppercase tracking-widest flex items-center gap-1 transition-colors">
+                          <Info className="w-3 h-3" /> Specs
+                        </button>
+                      }
+                    />
                     <DialogContent className="bg-slate-900 border-slate-800 text-white max-w-md">
                       <DialogHeader>
                         <DialogTitle className="text-xl font-bold flex items-center gap-2">
@@ -214,6 +304,37 @@ export function BuildVsBuyCalculator() {
                   checked={useSpot} 
                   onCheckedChange={setUseSpot} 
                 />
+              </div>
+
+              <div className="space-y-4 pt-4 border-t border-slate-800">
+                <div className="space-y-2">
+                  <Label className="text-[10px] font-mono uppercase text-slate-500 tracking-[0.2em]">ML Talent Cost (Monthly)</Label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-2.5 text-xs text-slate-500">$</span>
+                    <Input 
+                      type="number" 
+                      value={engineerCost} 
+                      onChange={(e) => setEngineerCost(Number(e.target.value))} 
+                      className="bg-slate-950 border-slate-800 text-slate-200 font-mono pl-7 h-9 text-xs"
+                    />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <div className="flex justify-between items-center">
+                    <Label className="text-[10px] font-mono uppercase text-slate-500 tracking-[0.2em]">Ops Overhead %</Label>
+                    <span className="text-[10px] font-mono text-blue-400 font-bold">{opsOverheadPercent}%</span>
+                  </div>
+                  <input 
+                    type="range"
+                    min="0"
+                    max="50"
+                    step="1"
+                    value={opsOverheadPercent}
+                    onChange={(e) => setOpsOverheadPercent(Number(e.target.value))}
+                    className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-blue-500"
+                  />
+                  <p className="text-[9px] text-slate-500 italic">Includes networking, storage, and platform maintenance.</p>
+                </div>
               </div>
             </div>
 
@@ -296,51 +417,62 @@ export function BuildVsBuyCalculator() {
                   </p>
                 </div>
 
-                <div className="w-48 h-48 border-l border-slate-800/50 pl-8 hidden md:block">
-                  <p className="text-[9px] font-mono font-bold text-slate-500 uppercase tracking-widest mb-2 text-center">Cost Mix (Build)</p>
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie
-                        data={stats.breakdownData}
-                        cx="50%"
-                        cy="50%"
-                        innerRadius={45}
-                        outerRadius={60}
-                        paddingAngle={5}
-                        dataKey="value"
-                      >
-                        {stats.breakdownData.map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={entry.color} />
-                        ))}
-                      </Pie>
-                      <RechartsTooltip 
-                        contentStyle={{ backgroundColor: '#0f172a', border: '1px solid #1e293b', borderRadius: '8px', fontSize: '10px' }} 
-                        formatter={(value: number) => `$${value.toLocaleString()}`}
-                      />
-                    </PieChart>
-                  </ResponsiveContainer>
+                <div className="w-full md:w-56 h-auto md:h-64 border-t md:border-t-0 md:border-l border-slate-800/50 pt-6 md:pt-0 md:pl-8">
+                  <p className="text-[9px] font-mono font-bold text-slate-500 uppercase tracking-widest mb-4 text-center">Cost Mix (Monthly Build)</p>
+                  <div className="h-40">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie
+                          data={stats.breakdownData}
+                          cx="50%"
+                          cy="50%"
+                          innerRadius={45}
+                          outerRadius={65}
+                          paddingAngle={4}
+                          dataKey="value"
+                        >
+                          {stats.breakdownData.map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={entry.color} />
+                          ))}
+                        </Pie>
+                        <RechartsTooltip 
+                          contentStyle={{ backgroundColor: '#0f172a', border: '1px solid #1e293b', borderRadius: '8px', fontSize: '10px', color: '#fff' }} 
+                          itemStyle={{ color: '#fff' }}
+                          formatter={(value: number) => `$${value.toLocaleString()}`}
+                        />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
+                  <div className="mt-4 flex flex-wrap justify-center gap-x-4 gap-y-2">
+                    {stats.breakdownData.map((entry, index) => (
+                      <div key={index} className="flex items-center gap-1.5">
+                        <div className="w-2 h-2 rounded-full" style={{ backgroundColor: entry.color }} />
+                        <span className="text-[9px] font-mono text-slate-400 uppercase tracking-tighter">{entry.name}</span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
             </div>
 
             <div>
-              <p className="text-[10px] font-mono font-bold text-slate-600 uppercase tracking-widest mb-4">Cost Allocation Matrix</p>
+              <p className="text-[10px] font-mono font-bold text-slate-600 uppercase tracking-widest mb-4">Cost Allocation Matrix (Monthly Build)</p>
               <div className="grid grid-cols-4 gap-4 text-[10px] font-mono">
                 <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 flex flex-col justify-between h-20 group hover:border-blue-500/30 transition-colors">
                   <span className="text-slate-500 uppercase tracking-tighter">GPU Compute</span>
                   <span className="font-bold text-white text-sm">${stats.infrastructureCost.toLocaleString()}</span>
                 </div>
-                <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 flex flex-col justify-between h-20 group hover:border-blue-500/30 transition-colors">
+                <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 flex flex-col justify-between h-20 group hover:border-emerald-500/30 transition-colors">
                   <span className="text-slate-500 uppercase tracking-tighter">ML talent</span>
-                  <span className="font-bold text-white text-sm">${BUILD_PARAMETERS.ENGINEER_MONTHLY_COST.toLocaleString()}</span>
+                  <span className="font-bold text-white text-sm">${stats.talentCost.toLocaleString()}</span>
                 </div>
-                <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 flex flex-col justify-between h-20 group hover:border-blue-500/30 transition-colors">
-                  <span className="text-slate-500 uppercase tracking-tighter">Ops Reserve</span>
-                  <span className="font-bold text-white text-sm">{(stats.totalMonthlyTokens / 1000000).toFixed(0)}M Tokens</span>
+                <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 flex flex-col justify-between h-20 group hover:border-indigo-500/30 transition-colors">
+                  <span className="text-slate-500 uppercase tracking-tighter">Ops Overhead</span>
+                  <span className="font-bold text-white text-sm">${stats.opsOverhead.toLocaleString()}</span>
                 </div>
-                <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 flex flex-col justify-between h-20 group hover:border-blue-500/30 transition-colors">
-                  <span className="text-slate-500 uppercase tracking-tighter">API Margin</span>
-                  <span className="font-bold text-rose-500 text-sm">$0.00</span>
+                <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 flex flex-col justify-between h-20 group hover:border-slate-500/30 transition-colors">
+                  <span className="text-slate-500 uppercase tracking-tighter">Capacity</span>
+                  <span className="font-bold text-slate-400 text-sm">{(stats.totalMonthlyTokens / 1000000).toFixed(0)}M Tok</span>
                 </div>
               </div>
             </div>
@@ -369,7 +501,3 @@ export function BuildVsBuyCalculator() {
 
   );
 }
-
-const Settings = ({ className }: { className?: string }) => (
-  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.1a2 2 0 0 1-1-1.72v-.51a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
-);

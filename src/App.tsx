@@ -19,7 +19,10 @@ import {
   CheckCircle2,
   Bell,
   Plus,
-  AlertTriangle
+  AlertTriangle,
+  Network,
+  Shield,
+  Zap
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -51,6 +54,8 @@ import {
 
 import { BuildVsBuyCalculator } from '@/src/components/BuildVsBuyCalculator';
 import { CloudInfrastructure } from '@/src/components/CloudInfrastructure';
+import { IntegrationGuide } from '@/src/components/IntegrationGuide';
+import { SecretsManager } from '@/src/components/SecretsManager';
 
 // Mock Data
 const COMPARISON_DATA = [
@@ -89,9 +94,9 @@ export default function App() {
       <aside className="w-64 bg-slate-900/40 border-r border-slate-800/60 flex flex-col pt-6 backdrop-blur-xl">
         <div className="px-6 mb-8 flex items-center gap-3">
           <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center shadow-[0_0_15px_rgba(37,99,235,0.4)]">
-            <Activity className="w-5 h-5 text-white" />
+            <Zap className="w-5 h-5 text-white fill-current" />
           </div>
-          <span className="font-bold text-lg tracking-tight text-white">AETHERIA</span>
+          <span className="font-bold text-lg tracking-widest text-white uppercase">Aetheronix</span>
         </div>
 
         <nav className="flex-1 px-3 space-y-2">
@@ -120,21 +125,49 @@ export default function App() {
             onClick={() => setActiveTab('infrastructure')} 
           />
           <NavItem 
+            icon={<Network className="w-4 h-4" />} 
+            label="Integrations" 
+            active={activeTab === 'integrations'} 
+            onClick={() => setActiveTab('integrations')} 
+          />
+          <NavItem 
             icon={<Bell className="w-4 h-4" />} 
-            label="Cost Alerts" 
+            label="Alerts & Governance" 
             active={activeTab === 'alerts'} 
             onClick={() => setActiveTab('alerts')} 
+          />
+          <NavItem 
+            icon={<Shield className="w-4 h-4" />} 
+            label="Secrets Management" 
+            active={activeTab === 'secrets'} 
+            onClick={() => setActiveTab('secrets')} 
           />
         </nav>
 
         <div className="p-4 mt-auto">
-          <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-4">
-            <p className="text-[10px] font-mono text-slate-500 mb-2 uppercase tracking-widest">Monthly Budget</p>
+          <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-4 font-mono">
+            <div className="flex justify-between items-center mb-1">
+              <span className="text-[10px] text-slate-500 uppercase tracking-widest">Sys_Kernel</span>
+              <span className="text-[8px] text-emerald-500 underline uppercase animate-pulse">Running</span>
+            </div>
+            <p className="text-[9px] text-slate-400 mb-3 grayscale opacity-70">aetheronix-control-plane-v1.0.4</p>
+            <div className="space-y-1 mb-3">
+              <div className="flex justify-between text-[9px]">
+                <span className="text-slate-600">CPU_LOAD</span>
+                <span className="text-blue-400">12.4%</span>
+              </div>
+              <div className="flex justify-between text-[9px]">
+                <span className="text-slate-600">MEM_ALLOC</span>
+                <span className="text-blue-400">4.2GB</span>
+              </div>
+            </div>
+            <Separator className="bg-slate-800 mb-3" />
+            <p className="text-[10px] text-slate-500 mb-2 uppercase tracking-widest">Monthly Budget</p>
             <div className="flex justify-between items-end mb-2">
-              <span className="text-xl font-mono font-medium text-white">$42.8k</span>
+              <span className="text-xl font-medium text-white">$42.8k</span>
               <span className="text-xs text-slate-500">/ $100k</span>
             </div>
-            <Progress value={42.8} className="h-1 bg-slate-800" />
+            <Progress value={42.8} className="h-0.5 bg-slate-800" />
           </div>
           <div className="mt-4 pt-4 border-t border-slate-800 italic text-[10px] text-slate-500 flex items-center justify-between">
             <span>v1.0.4 Enterprise</span>
@@ -146,18 +179,43 @@ export default function App() {
       </aside>
 
       {/* Main Content Area */}
-      <main className="flex-1 overflow-auto flex flex-col">
+      <main className="flex-1 overflow-auto flex flex-col bg-slate-950">
+        {/* System Ticker */}
+        <div className="h-8 bg-blue-600/10 border-b border-blue-500/10 flex items-center px-8 overflow-hidden">
+          <div className="flex items-center gap-12 whitespace-nowrap animate-marquee">
+            {[1, 2, 3].map(i => (
+              <div key={i} className="flex items-center gap-8 text-[10px] font-mono text-blue-400 opacity-80">
+                <span className="flex items-center gap-2"><Activity className="w-3 h-3" /> SYS_STABLE: 99.98%</span>
+                <span className="flex items-center gap-2"><Network className="w-3 h-3" /> EDGE_TRAFFIC: NORMAL</span>
+                <span className="flex items-center gap-2"><Cpu className="w-3 h-3" /> GPU_UTIL: 74.2%</span>
+                <span className="text-blue-500/50">|</span>
+              </div>
+            ))}
+          </div>
+          <style dangerouslySetInnerHTML={{ __html: `
+            @keyframes marquee {
+              0% { transform: translateX(0); }
+              100% { transform: translateX(-50%); }
+            }
+            .animate-marquee {
+              animation: marquee 30s linear infinite;
+            }
+          `}} />
+        </div>
+
         {/* Top Header Bar */}
         <header className="h-16 bg-slate-950/80 border-b border-slate-800 px-8 flex items-center justify-between sticky top-0 z-10 backdrop-blur-md">
           <div className="flex items-center gap-4">
-            <h1 className="text-lg font-semibold text-white tracking-tight">
-              {activeTab === 'overview' ? 'Compute Intelligence' : 
+            <h1 className="text-lg font-semibold text-white tracking-tight uppercase">
+              {activeTab === 'overview' ? 'Intelligence Dashboard' : 
                activeTab === 'calculator' ? 'Strategy Simulator' : 
-               activeTab === 'infrastructure' ? 'Cluster Control Plane' :
+               activeTab === 'infrastructure' ? 'Cluster Control' :
+               activeTab === 'integrations' ? 'Core Integrations' :
+               activeTab === 'secrets' ? 'Provisioning Vault' :
                activeTab === 'alerts' ? 'Governance Gates' :
                'Platform Configuration'}
             </h1>
-            <Badge variant="outline" className="font-mono text-[10px] uppercase border-slate-700 text-slate-400">Region: US-EAST-1</Badge>
+            <Badge variant="outline" className="font-mono text-[9px] uppercase border-slate-800 text-slate-500 bg-slate-900/50">Node: US-E1-M1</Badge>
           </div>
           <div className="flex items-center gap-4">
             <div className="text-right">
@@ -309,7 +367,7 @@ export default function App() {
                     <p className="text-xs text-slate-400 leading-relaxed">Competitors aggregate global costs but ignore the 14% performance penalty on cross-region GPU clusters.</p>
                   </div>
                   <div className="space-y-2 border-l-2 border-blue-500/50 pl-4">
-                    <p className="text-[10px] text-slate-500 uppercase tracking-tighter">Aetheria Advantage</p>
+                    <p className="text-[10px] text-slate-500 uppercase tracking-tighter">Aetheronix Advantage</p>
                     <p className="text-sm font-semibold text-white">Auto-Distillation Routing</p>
                     <p className="text-xs text-slate-400 leading-relaxed">Our engine automatically switches between small and large models based on task complexity, saving 40% on average.</p>
                   </div>
@@ -347,7 +405,7 @@ export default function App() {
                    <ScenarioCard 
                       title="The Latency Bias" 
                       problem="Apps in EMEA using US-East-1 GPUs experience 180ms extra latency, costing user engagement."
-                      solution="Aetheria detects peak latency and cross-routes payloads to local EU-West-1 L40S spot instances."
+                      solution="Aetheronix detects peak latency and cross-routes payloads to local EU-West-1 L40S spot instances."
                    />
                    <ScenarioCard 
                       title="Shadow AI Decay" 
@@ -366,6 +424,10 @@ export default function App() {
 
           {activeTab === 'infrastructure' && <CloudInfrastructure />}
 
+          {activeTab === 'integrations' && <IntegrationGuide />}
+
+          {activeTab === 'secrets' && <SecretsManager />}
+
           {activeTab === 'alerts' && (
             <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
               <div className="flex justify-between items-end">
@@ -374,11 +436,13 @@ export default function App() {
                   <p className="text-slate-500 text-sm">Define automated triggers for budget protection and anomaly detection.</p>
                 </div>
                 <Dialog>
-                  <DialogTrigger asChild>
-                    <Button className="bg-blue-600 hover:bg-blue-500 font-bold uppercase text-[10px] tracking-widest py-6 px-6">
-                      <Plus className="w-4 h-4 mr-2" /> Create Alert Trigger
-                    </Button>
-                  </DialogTrigger>
+                  <DialogTrigger
+                    render={
+                      <Button className="bg-blue-600 hover:bg-blue-500 font-bold uppercase text-[10px] tracking-widest py-6 px-6">
+                        <Plus className="w-4 h-4 mr-2" /> Create Alert Trigger
+                      </Button>
+                    }
+                  />
                   <DialogContent className="bg-slate-900 border-slate-800 text-white">
                     <DialogHeader>
                       <DialogTitle className="text-xl font-bold">New Cost Threshold</DialogTitle>
@@ -532,8 +596,8 @@ function StatCard({ label, value, trend, trendType = 'neutral', icon, descriptio
           </div>
         </div>
         <div className="flex items-baseline gap-2">
-          <h3 className="text-2xl font-mono font-bold text-white tracking-tighter">{value}</h3>
-          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+          <h3 className="text-2xl font-mono font-bold text-white tracking-tighter transition-colors group-hover:text-blue-400">{value}</h3>
+          <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-full ${
             trendType === 'up' ? 'bg-emerald-500/10 text-emerald-400' : 
             trendType === 'down' ? 'bg-rose-500/10 text-rose-400' : 
             'bg-slate-800 text-slate-500'
@@ -549,9 +613,7 @@ function StatCard({ label, value, trend, trendType = 'neutral', icon, descriptio
 
   return (
     <Tooltip>
-      <TooltipTrigger asChild>
-        {cardContent}
-      </TooltipTrigger>
+      <TooltipTrigger render={cardContent} />
       <TooltipContent className="bg-slate-900 border-slate-800 text-slate-300 text-xs p-3 max-w-[200px]">
         <p>{description}</p>
       </TooltipContent>
